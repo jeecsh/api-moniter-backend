@@ -5,25 +5,55 @@ generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
+datasource db { 
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 model User {
   id        String    @id @default(uuid())
   email     String    @unique
   password  String
-  role      String    @default("user") // "admin" or "user"
+  role      String    @default("user")
+  settings  Settings?
+  endpoints Endpoint[]
+  apiTests  ApiTest[]
   createdAt DateTime  @default(now())
-  apiTests  ApiTest[] // Add this line to define the opposite relation
+}
+
+model Settings {
+  id                    Int      @id @default(autoincrement())
+  user                  User     @relation(fields: [userId], references: [id])
+  userId                String   @unique
+  responseTimeThreshold Int      @default(200)
+  testFrequency        Int      @default(5)
+  emailNotifications    Boolean  @default(true)
+  slackNotifications   Boolean   @default(false)
+  notificationEmail    String    @default("")
+  slackWebhookUrl      String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model Endpoint {
+  id                Int      @id @default(autoincrement())
+  user             User     @relation(fields: [userId], references: [id])
+  userId           String
+  name             String
+  url              String
+  method           String
+  headers          Json     @default("[]")
+  requestBody      String?
+  expectedResponseTime Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model ApiTest {
   id           String   @id @default(uuid())
   user         User     @relation(fields: [userId], references: [id])
   userId       String
-  endpoint     String
-  status       Int      // 200, 400, 500, etc.
-  responseTime Int      // in milliseconds
+  status       Int
+  responseTime Int
   createdAt    DateTime @default(now())
 }
