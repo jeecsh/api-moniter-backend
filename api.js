@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 const app = express();
 const prisma = new PrismaClient();
@@ -244,6 +245,103 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+
+
+const axios = require('axios');
+
+app.post('/api/runtests', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: "User ID is required" });
+
+    const endpoints = await prisma.endpoint.findMany({ where: { userId } });
+    const testResults = [];
+
+    for (const endpoint of endpoints) {
+      const { id, name, url, method, headers, requestBody } = endpoint;
+
+      const startTime = Date.now();
+      let statusCode = 500;
+      let status = "Failed";
+      let responseTime = 0;
+
+      try {
+        const response = await axios({
+          method,
+          url,
+          headers: headers ? JSON.parse(headers) : {},
+          data: requestBody ? JSON.parse(requestBody) : undefined,
+        });
+
+        statusCode = response.status;
+        status = statusCode === 200 ? "Success" : "Failed";
+      } catch (error) {
+        statusCode = error.response ? error.response.status : 500;
+      }
+
+      responseTime = Date.now() - startTime;
+      const testResult = await prisma.apiTest.create({
+        data: {
+          userId,
+          endpointId: id,  // Store the endpoint ID
+          status: status === "Success" ? 1 : 0,
+          responseTime,
+          statusCode,
+          createdAt: new Date(),
+        },
+        include: {
+          endpoint: true, // Now this will work correctly
+        },
+      });
+      
+
+      testResults.push({
+        id: testResult.id,
+        endpoint: name, // Include endpoint name
+        status: testResult.status,
+        responseTime: testResult.responseTime,
+        statusCode: testResult.statusCode,
+        createdAt: testResult.createdAt,
+      });
+    }
+
+    res.json({ message: "Tests completed", testResults });
+  } catch (error) {
+    console.error("Error running tests:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+/////
+
+
+app.get('/api/test-history', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: "User ID is required" });
+    const pastTests = await prisma.apiTest.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      include: { endpoint: true },  // Now this works because of the relation
+    });
+    
+    res.json(pastTests.map(test => ({
+      id: test.id,
+      endpoint: test.endpoint.name,  // Now we can access endpoint name
+      status: test.status,
+      responseTime: test.responseTime,
+      statusCode: test.statusCode,
+      createdAt: test.createdAt,
+    })));
+
+  } catch (error) {
+    console.error("Error fetching test history:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
